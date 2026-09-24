@@ -22,20 +22,40 @@ echo "Computing SHA256 hashes for tool downloads..."
 echo "=============================================="
 echo ""
 
+# Prebuilt-binary tools carry one hash per architecture (<TOOL>_SHA256_X86_64 /
+# <TOOL>_SHA256_AARCH64). Upstream asset naming differs per project, so each
+# call passes its own arch token.
+# Usage: hash_asset <VAR_PREFIX> <ARCH_SUFFIX> <URL>
+hash_asset() {
+    local var="$1" suffix="$2" url="$3"
+    local file="$TMPDIR/${var}_${suffix}"
+    echo "Downloading ${url}..."
+    curl -fsSL -o "$file" "$url"
+    echo "${var}_SHA256_${suffix}=$($SHA_CMD "$file" | cut -d' ' -f1)"
+}
+
 # ccache
-CCACHE_VERSION="${CCACHE_VERSION:-4.10.2}"
-echo "Downloading ccache ${CCACHE_VERSION}..."
-curl -fsSL -o "$TMPDIR/ccache.tar.xz" \
-    "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-x86_64.tar.xz"
-echo "CCACHE_SHA256=$($SHA_CMD "$TMPDIR/ccache.tar.xz" | cut -d' ' -f1)"
+CCACHE_VERSION="${CCACHE_VERSION:-4.14}"
+for arch in x86_64 aarch64; do
+    hash_asset CCACHE "$(echo "$arch" | tr '[:lower:]' '[:upper:]')" \
+        "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-${arch}-glibc.tar.xz"
+done
+echo ""
+
+# ccache-storage-s3-go helper (Go-style arch names)
+STORAGE_HELPER_VERSION="${STORAGE_HELPER_VERSION:-0.1.7}"
+hash_asset STORAGE_HELPER X86_64 \
+    "https://github.com/blozano-tt/ccache-storage-s3-go/releases/download/v${STORAGE_HELPER_VERSION}/ccache-storage-s3-go-${STORAGE_HELPER_VERSION}-linux-amd64.tar.gz"
+hash_asset STORAGE_HELPER AARCH64 \
+    "https://github.com/blozano-tt/ccache-storage-s3-go/releases/download/v${STORAGE_HELPER_VERSION}/ccache-storage-s3-go-${STORAGE_HELPER_VERSION}-linux-arm64.tar.gz"
 echo ""
 
 # mold
 MOLD_VERSION="${MOLD_VERSION:-2.42.0}"
-echo "Downloading mold ${MOLD_VERSION}..."
-curl -fsSL -o "$TMPDIR/mold.tar.gz" \
-    "https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-x86_64-linux.tar.gz"
-echo "MOLD_SHA256=$($SHA_CMD "$TMPDIR/mold.tar.gz" | cut -d' ' -f1)"
+for arch in x86_64 aarch64; do
+    hash_asset MOLD "$(echo "$arch" | tr '[:lower:]' '[:upper:]')" \
+        "https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-${arch}-linux.tar.gz"
+done
 echo ""
 
 # doxygen
@@ -74,10 +94,10 @@ echo ""
 
 # cmake
 CMAKE_VERSION="${CMAKE_VERSION:-4.2.3}"
-echo "Downloading cmake ${CMAKE_VERSION}..."
-curl -fsSL -o "$TMPDIR/cmake.tar.gz" \
-    "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
-echo "CMAKE_SHA256=$($SHA_CMD "$TMPDIR/cmake.tar.gz" | cut -d' ' -f1)"
+for arch in x86_64 aarch64; do
+    hash_asset CMAKE "$(echo "$arch" | tr '[:lower:]' '[:upper:]')" \
+        "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-${arch}.tar.gz"
+done
 echo ""
 
 # yq
@@ -114,7 +134,7 @@ echo ""
 
 # SFPI - Note: version comes from tt_metal/sfpi-version, not hardcoded here
 echo "SFPI: Version and hash come from tt_metal/sfpi-version (single source of truth)"
-echo "       Run: grep sfpi_x86_64_debian_deb_hash tt_metal/sfpi-version"
+echo "       Run: grep -E 'sfpi_(x86_64|aarch64)_debian_deb_hash' tt_metal/sfpi-version"
 echo ""
 
 echo "=============================================="

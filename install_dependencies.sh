@@ -239,12 +239,15 @@ init_packages() {
                 "numactl-devel"
                 "libatomic"
                 "libstdc++"
-                "intel-oneapi-tbb-devel"
                 "capstone-devel"
                 "wget"
                 "curl"
                 "vim-common" # Includes xxd
             )
+            # Intel's oneAPI repo only publishes x86_64 builds (see prep_redhat_system).
+            if [ "$(uname -m)" = "x86_64" ]; then
+                PACKAGES+=("intel-oneapi-tbb-devel")
+            fi
             if [ "$distributed" -eq 1 ]; then
                 PACKAGES+=("openmpi" "openmpi-devel")
             fi
@@ -314,6 +317,17 @@ prep_redhat_system() {
     # Add Intel oneAPI repository for TBB 2021+
     # Legacy tbb-devel (2020.3) has an enum-out-of-range bug (oneapi-src/oneTBB#843)
     # that is rejected by clang when gcc-toolset-15's <execution> header pulls tbb/task.h
+    #
+    # The repo only ships x86_64 packages. On other arches install no TBB at all:
+    # oneAPI puts its headers under /opt/intel/oneapi (off the default include
+    # path) and nothing in tt-metal links TBB, so "no TBB visible to the
+    # compiler" matches the effective x86_64 state. Legacy tbb-devel must NOT be
+    # installed as a substitute (bug above).
+    if [ "$(uname -m)" != "x86_64" ]; then
+        echo "[INFO] Skipping Intel oneAPI TBB repository on $(uname -m) (x86_64-only)"
+        return
+    fi
+
     cat > /etc/yum.repos.d/oneAPI.repo << 'REPO_EOF'
 [oneAPI]
 name=Intel oneAPI repository

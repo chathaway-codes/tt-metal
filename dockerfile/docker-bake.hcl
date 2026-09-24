@@ -255,7 +255,11 @@ group "venvs" {
 # in the Dockerfile. Bake overrides those stages with the tool target outputs.
 # =============================================================================
 
-target "_main-common" {
+# Split from _main-common because `inherits` merges `contexts` and cannot drop
+# keys, and bake builds every `target:` context eagerly even when the final
+# stage never copies from it. Targets that need only a subset of tool layers
+# (e.g. release) inherit this and list their own contexts.
+target "_main-args" {
   context    = "."
   dockerfile = "dockerfile/Dockerfile"
   args = {
@@ -264,6 +268,10 @@ target "_main-common" {
     UV_IMAGE       = UV_IMAGE
     TT_SMI_VERSION = TT_SMI_VERSION
   }
+}
+
+target "_main-common" {
+  inherits = ["_main-args"]
   contexts = {
     # Tool layers (resolved from Dockerfile.tools targets locally)
     ccache-layer             = "target:ccache"
@@ -326,10 +334,17 @@ target "dev" {
   }
 }
 
+# release builds on the `base` stage only, which copies just these four layers.
 target "release" {
-  inherits = ["_main-common"]
+  inherits = ["_main-args"]
   target   = "release"
   tags     = ["tt-metalium-release:local"]
+  contexts = {
+    cmake-layer   = "target:cmake"
+    zstd-layer    = "target:zstd"
+    openmpi-layer = "target:openmpi"
+    sfpi-layer    = "target:sfpi"
+  }
 }
 
 target "release-models" {

@@ -32,8 +32,9 @@ fi
 # shellcheck source=/dev/null
 source "$SFPI_VERSION_FILE"
 
-# For Docker tool image builds, we always target x86_64 debian .deb
-SFPI_ARCH="x86_64"
+# Tool images are built natively, so the builder's arch is the target arch.
+# sfpi-version carries a debian .deb hash for both x86_64 and aarch64.
+SFPI_ARCH="$(uname -m)"
 SFPI_DIST="debian"
 SFPI_PKG="deb"
 

@@ -4,24 +4,37 @@
 set -euo pipefail
 
 CCACHE_VERSION="${CCACHE_VERSION:-4.14}"
-# SHA256 for ccache-4.14-linux-x86_64-glibc.tar.xz
+# SHA256 for ccache-4.14-linux-{x86_64,aarch64}-glibc.tar.xz
 # Note: starting v4.11, upstream renamed the tarball to include -glibc suffix
 # Verified by downloading and computing hash with compute-hashes.sh
-CCACHE_SHA256="${CCACHE_SHA256:-45a91165db7092e67c6208ada03f54700e684c4cd3735f9031de95669ed9272c}"
+CCACHE_SHA256_X86_64="${CCACHE_SHA256_X86_64:-45a91165db7092e67c6208ada03f54700e684c4cd3735f9031de95669ed9272c}"
+CCACHE_SHA256_AARCH64="${CCACHE_SHA256_AARCH64:-8182a7e909a4a453e2b3011de9dafef11fd1bd35364947816e0126e467137dc2}"
 
 # Remote storage helper for S3-backed ccache (crsh: custom storage protocol).
 # ccache derives the helper name (ccache-storage-s3) from the s3:// URL scheme
 # and looks for it in its libexec_dirs (baked in as /usr/local/libexec below).
 STORAGE_HELPER_VERSION="${STORAGE_HELPER_VERSION:-0.1.7}"
-# SHA256 for ccache-storage-s3-go-0.1.7-linux-amd64.tar.gz
+# SHA256 for ccache-storage-s3-go-0.1.7-linux-{amd64,arm64}.tar.gz
 # Verified by downloading from GitHub releases and running sha256sum.
-STORAGE_HELPER_SHA256="${STORAGE_HELPER_SHA256:-3ac52edbcbda895c5514f13eac39e6d9a9e2550234b331c8e14050a94b79854c}"
+STORAGE_HELPER_SHA256_X86_64="${STORAGE_HELPER_SHA256_X86_64:-3ac52edbcbda895c5514f13eac39e6d9a9e2550234b331c8e14050a94b79854c}"
+STORAGE_HELPER_SHA256_AARCH64="${STORAGE_HELPER_SHA256_AARCH64:-5fc05155369b1ba950043df79bcddc1313e09b9df8b6644a5143050ed1bf503f}"
+
+# ccache names release assets by uname arch; the Go helper uses GOARCH names.
+case "$(uname -m)" in
+    x86_64)
+        CCACHE_ARCH=x86_64;  CCACHE_SHA256="${CCACHE_SHA256_X86_64}"
+        STORAGE_HELPER_ARCH=amd64; STORAGE_HELPER_SHA256="${STORAGE_HELPER_SHA256_X86_64}" ;;
+    aarch64)
+        CCACHE_ARCH=aarch64; CCACHE_SHA256="${CCACHE_SHA256_AARCH64}"
+        STORAGE_HELPER_ARCH=arm64; STORAGE_HELPER_SHA256="${STORAGE_HELPER_SHA256_AARCH64}" ;;
+    *) echo "[ERROR] Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
 
 INSTALL_DIR="${INSTALL_DIR:-/usr/local}"
-DOWNLOAD_URL="https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-x86_64-glibc.tar.xz"
+DOWNLOAD_URL="https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-glibc.tar.xz"
 TMPFILE="/tmp/ccache.tar.xz"
 
-echo "Installing ccache ${CCACHE_VERSION}..."
+echo "Installing ccache ${CCACHE_VERSION} (${CCACHE_ARCH})..."
 
 # Download (use curl if wget not available)
 if command -v wget &> /dev/null; then
@@ -70,7 +83,7 @@ rm -f "${TMPFILE}"
 # ---------------------------------------------------------------------------
 echo "Installing ccache-storage-s3 helper ${STORAGE_HELPER_VERSION}..."
 
-STORAGE_HELPER_URL="https://github.com/blozano-tt/ccache-storage-s3-go/releases/download/v${STORAGE_HELPER_VERSION}/ccache-storage-s3-go-${STORAGE_HELPER_VERSION}-linux-amd64.tar.gz"
+STORAGE_HELPER_URL="https://github.com/blozano-tt/ccache-storage-s3-go/releases/download/v${STORAGE_HELPER_VERSION}/ccache-storage-s3-go-${STORAGE_HELPER_VERSION}-linux-${STORAGE_HELPER_ARCH}.tar.gz"
 STORAGE_HELPER_TMPFILE="/tmp/ccache-storage-s3.tar.gz"
 
 # Download (use curl if wget not available)

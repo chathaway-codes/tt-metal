@@ -21,13 +21,19 @@ FROM scratch AS openmpi-layer
 # Main manylinux image
 #############################################################
 
-FROM quay.io/pypa/manylinux_2_34_x86_64
+# Base selected by BuildKit's automatic TARGETARCH (amd64 / arm64), which is
+# predefined in the global scope and so usable in FROM without an ARG.
+# --platform is pinned because each upstream image is single-arch.
+FROM --platform=linux/amd64 quay.io/pypa/manylinux_2_34_x86_64 AS manylinux-base-amd64
+FROM --platform=linux/arm64 quay.io/pypa/manylinux_2_34_aarch64 AS manylinux-base-arm64
+
+FROM manylinux-base-${TARGETARCH}
 LABEL org.opencontainers.image.source="https://github.com/tenstorrent/tt-metal"
 LABEL org.opencontainers.image.description="TT-Metalium manylinux environment for Python wheel builds"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.documentation="https://docs.tenstorrent.com/"
 
-# manylinux_2_34_x86_64 is AlmaLinux 9.7
+# manylinux_2_34 images are AlmaLinux 9 based
 
 # IMPORTANT: Keep this in sync with OMPI_VERSION in Dockerfile.tools
 # OpenMPI configuration - must match Dockerfile.tools OMPI_VERSION

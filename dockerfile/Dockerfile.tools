@@ -15,11 +15,18 @@
 # These must match the versions in the main Dockerfile
 #############################################################
 
+# Tools shipped as prebuilt binaries carry one SHA256 per architecture; the
+# install script picks the one matching the (native) builder's `uname -m`.
 ARG CCACHE_VERSION=4.14
-ARG CCACHE_SHA256=45a91165db7092e67c6208ada03f54700e684c4cd3735f9031de95669ed9272c
+ARG CCACHE_SHA256_X86_64=45a91165db7092e67c6208ada03f54700e684c4cd3735f9031de95669ed9272c
+ARG CCACHE_SHA256_AARCH64=8182a7e909a4a453e2b3011de9dafef11fd1bd35364947816e0126e467137dc2
+# ccache-storage-s3-go helper (version is pinned in install-ccache.sh)
+ARG STORAGE_HELPER_SHA256_X86_64=3ac52edbcbda895c5514f13eac39e6d9a9e2550234b331c8e14050a94b79854c
+ARG STORAGE_HELPER_SHA256_AARCH64=5fc05155369b1ba950043df79bcddc1313e09b9df8b6644a5143050ed1bf503f
 
 ARG MOLD_VERSION=2.42.0
-ARG MOLD_SHA256=f5ed2f6e31d1ada4f07fe766fe0de7a73104d1c5cdc59086fcecc16a43720b6d
+ARG MOLD_SHA256_X86_64=f5ed2f6e31d1ada4f07fe766fe0de7a73104d1c5cdc59086fcecc16a43720b6d
+ARG MOLD_SHA256_AARCH64=3c9a0a3624aac8a2007569ae50c33b3129a0f0ae8bcc974aeee2f8939d295190
 
 ARG DOXYGEN_VERSION=1.16.1
 ARG DOXYGEN_SHA256=a56f885d37e3aae08a99f638d17bbb381224c03a878d9e2dda4f9fa4baf1d8bd
@@ -37,7 +44,8 @@ ARG GDB_VERSION=14.2
 ARG GDB_SHA256=2d4dd8061d8ded12b6c63f55e45344881e8226105f4d2a9b234040efa5ce7772
 
 ARG CMAKE_VERSION=4.2.3
-ARG CMAKE_SHA256=5bb505d5e0cca0480a330f7f27ccf52c2b8b5214c5bba97df08899f5ef650c23
+ARG CMAKE_SHA256_X86_64=5bb505d5e0cca0480a330f7f27ccf52c2b8b5214c5bba97df08899f5ef650c23
+ARG CMAKE_SHA256_AARCH64=e529c75f18f27ba27c52b329efe7b1f98dc32ccc0c6d193c7ab343f888962672
 
 ARG YQ_VERSION=v4.44.6
 ARG YQ_SHA256=0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598
@@ -95,13 +103,27 @@ ARG DOCKERFILE_FRONTEND_DIGEST=sha256:0adf442eae370b6087e08edc7c50b552d80ddf2615
 # The install-sfpi.sh script sources these files directly.
 
 #############################################################
+# manylinux base, selected by BuildKit's automatic TARGETARCH (amd64 /
+# arm64), which is predefined in the global scope and so usable in FROM
+# without an ARG. The image names use uname-style arch suffixes; the images
+# are single-arch, so --platform states that explicitly (silences the
+# InvalidBaseImagePlatform check for the stage that is not selected).
+#############################################################
+
+FROM --platform=linux/amd64 quay.io/pypa/manylinux_2_34_x86_64 AS manylinux-base-amd64
+FROM --platform=linux/arm64 quay.io/pypa/manylinux_2_34_aarch64 AS manylinux-base-arm64
+
+#############################################################
 # ccache - binary extraction with install.sh
 # Outputs: /install/bin/ccache, /install/libexec/ccache
 #############################################################
 
 FROM ubuntu:22.04 AS ccache-builder
 ARG CCACHE_VERSION
-ARG CCACHE_SHA256
+ARG CCACHE_SHA256_X86_64
+ARG CCACHE_SHA256_AARCH64
+ARG STORAGE_HELPER_SHA256_X86_64
+ARG STORAGE_HELPER_SHA256_AARCH64
 
 ENV DEBIAN_FRONTEND=noninteractive
 # Enforce strict error handling: exit on error, unset vars, pipe failures
@@ -112,7 +134,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY dockerfile/scripts/install-ccache.sh /tmp/install-ccache.sh
 RUN CCACHE_VERSION=${CCACHE_VERSION} \
-    CCACHE_SHA256=${CCACHE_SHA256} \
+    CCACHE_SHA256_X86_64=${CCACHE_SHA256_X86_64} \
+    CCACHE_SHA256_AARCH64=${CCACHE_SHA256_AARCH64} \
+    STORAGE_HELPER_SHA256_X86_64=${STORAGE_HELPER_SHA256_X86_64} \
+    STORAGE_HELPER_SHA256_AARCH64=${STORAGE_HELPER_SHA256_AARCH64} \
     INSTALL_DIR=/install \
     /bin/bash /tmp/install-ccache.sh
 
@@ -131,14 +156,16 @@ COPY --from=ccache-builder /install/ /install/
 
 FROM alpine:3.19 AS mold-builder
 ARG MOLD_VERSION
-ARG MOLD_SHA256
+ARG MOLD_SHA256_X86_64
+ARG MOLD_SHA256_AARCH64
 # Install bash first (required for SHELL directive)
 RUN apk add --no-cache bash wget
 # Enforce strict error handling: exit on error, unset vars, pipe failures
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 COPY dockerfile/scripts/install-mold.sh /tmp/install-mold.sh
 RUN MOLD_VERSION=${MOLD_VERSION} \
-    MOLD_SHA256=${MOLD_SHA256} \
+    MOLD_SHA256_X86_64=${MOLD_SHA256_X86_64} \
+    MOLD_SHA256_AARCH64=${MOLD_SHA256_AARCH64} \
     INSTALL_DIR=/install \
     /bin/bash /tmp/install-mold.sh
 
@@ -284,14 +311,16 @@ COPY --from=gdb-builder /install/ /install/
 
 FROM alpine:3.19 AS cmake-builder
 ARG CMAKE_VERSION
-ARG CMAKE_SHA256
+ARG CMAKE_SHA256_X86_64
+ARG CMAKE_SHA256_AARCH64
 # Install bash first (required for SHELL directive)
 RUN apk add --no-cache bash wget
 # Enforce strict error handling: exit on error, unset vars, pipe failures
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 COPY dockerfile/scripts/install-cmake.sh /tmp/install-cmake.sh
 RUN CMAKE_VERSION=${CMAKE_VERSION} \
-    CMAKE_SHA256=${CMAKE_SHA256} \
+    CMAKE_SHA256_X86_64=${CMAKE_SHA256_X86_64} \
+    CMAKE_SHA256_AARCH64=${CMAKE_SHA256_AARCH64} \
     INSTALL_DIR=/install \
     /bin/bash /tmp/install-cmake.sh
 
@@ -334,7 +363,7 @@ COPY --from=yq-builder /install/ /install/
 # Outputs: /install/bin/zstd, /install/lib/libzstd.*, /install/include/...
 #############################################################
 
-FROM quay.io/pypa/manylinux_2_34_x86_64 AS zstd-builder
+FROM manylinux-base-${TARGETARCH} AS zstd-builder
 ARG ZSTD_VERSION
 ARG ZSTD_SHA256
 
@@ -378,7 +407,7 @@ COPY --from=zstd-builder /install/ /install/
 # on both destinations with "version `OPENSSL_3.2.0' not found".
 #############################################################
 
-FROM quay.io/pypa/manylinux_2_34_x86_64 AS curl-builder
+FROM manylinux-base-${TARGETARCH} AS curl-builder
 ARG CURL_VERSION
 ARG CURL_SHA256
 ARG OPENSSL_VERSION
@@ -402,6 +431,7 @@ RUN FILES=(/etc/yum.repos.d/*.repo) && \
 # image, not just the Garage/SigV4 use case. Confirmed libpsl-devel is in
 # AlmaLinux 9's AppStream repo (no CRB needed) by checking
 # https://repo.almalinux.org/almalinux/9/AppStream/x86_64/os/Packages/
+# (also present under aarch64/).
 # directly. Not attempting HTTP/2 (libnghttp2-devel) here - unlike the
 # others, its availability/name on this base wasn't verified, and it's a
 # nice-to-have, not a security property, so configure just skips it if absent.
@@ -477,7 +507,7 @@ COPY --from=sfpi-builder /install/ /install/
 # which produces /opt/openmpi-<tag>-ulfm/ in the final image.
 #############################################################
 
-FROM quay.io/pypa/manylinux_2_34_x86_64 AS openmpi-builder
+FROM manylinux-base-${TARGETARCH} AS openmpi-builder
 ARG OMPI_VERSION
 ARG OMPI_COMMIT_SHA
 
